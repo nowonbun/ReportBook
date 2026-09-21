@@ -184,6 +184,7 @@ let pageSize = 10
 let selected: number[] = []
 let editing: Book = blank()
 let actionId: number | null = null
+let actionMenuPosition: { left: number, top: number } | null = null
 let menuOpen = false
 let dark = false
 let toast = ''
@@ -270,6 +271,7 @@ const navigate = (next: Page) => {
   location.hash = next
   menuOpen = false
   actionId = null
+  actionMenuPosition = null
   window.scrollTo(0, 0)
   render()
 }
@@ -449,6 +451,18 @@ function catalog() {
     </button>`,
   )
 
+  const actionMenu = (book: Book) => {
+    if (actionId !== book.id || !actionMenuPosition) return ''
+
+    return `<div
+      class="action-menu"
+      style="left:${actionMenuPosition.left}px; top:${actionMenuPosition.top}px"
+    >
+      <button data-action="edit" data-id="${book.id}">${icon('pencil', 15)} 편집</button>
+      <button data-action="delete" data-id="${book.id}">${icon('trash', 15)} 삭제</button>
+    </div>`
+  }
+
   return `${heading}
   <div class="catalog-controls">
 <div class="tabs">${([['전체', c.all], ['완독', c.done], ['읽는 중', c.reading], ['읽고 싶음', c.wishlist]] as const).map(([name, count]) => `<button data-action="filter" data-filter="${name}" class="${filter === name ? 'active' : ''}">${name} (${count})</button>`).join('')}</div>
@@ -507,10 +521,7 @@ function catalog() {
 <td class="memo-cell">${escapeHtml(book.memo || '-')}</td>
 <td class="date-cell">${formatDate(book.registeredDate)}</td>
 <td class="actions-cell">
-<button class="dots-button" data-action="actions" data-id="${book.id}" aria-label="${escapeHtml(book.title)} 작업">${icon('more', 20)}</button>${actionId === book.id ? `<div class="action-menu">
-<button data-action="edit" data-id="${book.id}">${icon('pencil', 15)} 편집</button>
-<button data-action="delete" data-id="${book.id}">${icon('trash', 15)} 삭제</button>
-</div>` : ''}</td>
+<button class="dots-button" data-action="actions" data-id="${book.id}" aria-label="${escapeHtml(book.title)} 작업">${icon('more', 20)}</button>${actionMenu(book)}</td>
 </tr>`).join('')}</tbody>
 </table>${visible.length ? '' : ('<div class="empty-state">' + (c.all === 0 ? '등록된 도서가 없습니다.' : '검색 결과가 없습니다.') + '</div>')}</div>` : `<div class="book-grid">${visible.map(book => `<article class="grid-book-card">
 <button data-action="edit" data-id="${book.id}">${cover(book)}<strong>${escapeHtml(book.title)}</strong>
@@ -536,9 +547,25 @@ function catalog() {
 </div>`
 }
 
-function field(name: keyof Book, label: string, required = false, type = 'text', placeholder = '') {
-  return `<label>${label}${required ? ' <b>*</b>' : ''}<input data-field="${name}" type="${type}" ${required ? 'required' : ''} value="${escapeHtml(editing[name])}" placeholder="${placeholder}">
-</label>`
+function field(
+  name: keyof Book,
+  label: string,
+  required = false,
+  type = 'text',
+  placeholder = '',
+) {
+  const requiredMark = required ? ' <b aria-hidden="true">*</b>' : ''
+
+  return `<label>
+    <span class="field-label">${label}${requiredMark}</span>
+    <input
+      data-field="${name}"
+      type="${type}"
+      ${required ? 'required' : ''}
+      value="${escapeHtml(editing[name])}"
+      placeholder="${placeholder}"
+    >
+  </label>`
 }
 const textarea = (name: keyof Book, placeholder: string, max = 2000) => `<textarea data-field="${name}" maxlength="${max}" placeholder="${placeholder}">${escapeHtml(editing[name])}</textarea>`
 function formPage() {
@@ -560,7 +587,8 @@ function formPage() {
 <div class="basic-fields">
 <h2>1. 책 기본 정보</h2>${field('title', '책 제목', true, 'text', '책 제목을 입력하세요')}<div class="field-row two">${field('author', '저자', true, 'text', '저자 이름')}${field('publisher', '출판사', false, 'text', '출판사')}</div>
 <div class="field-row three">
-<label>카테고리 <b>*</b>
+<label>
+<span class="field-label">카테고리 <b aria-hidden="true">*</b></span>
 <select data-field="category">${categories.map(value => `<option ${editing.category === value ? 'selected' : ''}>${value}</option>`).join('')}</select>
 </label>
 <label>세부 카테고리<select data-field="subcategory">${['', '일본 문학', '한국 문학', '해외 문학', '비문학'].map(value => `<option value="${value}" ${editing.subcategory === value ? 'selected' : ''}>${value || '선택하세요'}</option>`).join('')}</select>
@@ -770,7 +798,27 @@ root.addEventListener('click', async event => {
   if (action === 'nav') { const next = target.dataset.page as Page; next === 'write' ? openNew() : navigate(next) }
   if (action === 'new') openNew()
   if (action === 'edit') openEdit(id)
-  if (action === 'actions') { actionId = actionId === id ? null : id; render() }
+  if (action === 'actions') {
+    if (actionId === id) {
+      actionId = null
+      actionMenuPosition = null
+    } else {
+      const fallbackRect = { right: 108, bottom: 0 }
+      const rect = typeof target.getBoundingClientRect === 'function'
+        ? target.getBoundingClientRect()
+        : fallbackRect
+      const menuWidth = 108
+      const viewportWidth = window.innerWidth || 1200
+
+      actionId = id
+      actionMenuPosition = {
+        left: Math.max(8, Math.min(rect.right - menuWidth, viewportWidth - menuWidth - 8)),
+        top: rect.bottom + 6,
+      }
+    }
+
+    render()
+  }
   if (action === 'delete' || action === 'delete-selected') { const ids = action === 'delete' ? [id] : selected; if (ids.length && confirm(`${ids.length}권의 도서를 삭제하시겠습니까?`)) { try { await Promise.all(ids.map(bookId => api(`/api/books/${bookId}`, 'DELETE'))); books = books.filter(book => !ids.includes(book.id)); selected = []; actionId = null; notice('도서를 삭제했습니다.') } catch (error) { notice(`삭제 실패: ${(error as Error).message}`) } } }
   if (action === 'filter') { filter = target.dataset.filter as BookStatus | '전체'; pageNumber = 1; render() }
   if (action === 'view') { view = target.dataset.view as 'list' | 'grid'; render() }

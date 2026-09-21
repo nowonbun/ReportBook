@@ -13,5 +13,7 @@ for (const file of ['app.ts', 'data.ts']) {
   await writeFile(join(out, file.replace(/\.ts$/, '.js')), javascript, 'utf8')
 }
 await writeFile(join(out, 'seed.json'), '[]\n', 'utf8')
-for (const file of ['index.html', 'styles.css']) await copyFile(join(client, file), join(out, file))
+for (const file of ['favicon.ico', 'index.html', 'styles.css']) {
+  await copyFile(join(client, file), join(out, file))
+}
 console.log('Built TypeScript site in dist/')

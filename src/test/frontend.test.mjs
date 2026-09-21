@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 
 test('화면은 localStorage가 아닌 SQLite API에서 읽고, 새 기록을 API로 저장한다', async () => {
   const listeners = {}
@@ -22,6 +23,8 @@ test('화면은 localStorage가 아닌 SQLite API에서 읽고, 새 기록을 AP
 
   const action = (name, extra = {}) => { const target = { dataset:{ action:name, ...extra } }; listeners.click({ target:{ closest:() => target } }) }
   action('new')
+  assert.match(root.innerHTML, /<span class="field-label">책 제목 <b aria-hidden="true">\*<\/b><\/span>/)
+  assert.match(root.innerHTML, /<span class="field-label">카테고리 <b aria-hidden="true">\*<\/b><\/span>/)
   listeners.input({ target:{ dataset:{ field:'title' }, value:'새 기록' } })
   listeners.input({ target:{ dataset:{ field:'author' }, value:'새 저자' } })
   await listeners.submit({ target:{ id:'book-form' }, preventDefault() {} })
@@ -43,4 +46,13 @@ test('도서가 없으면 대시보드와 목록에 예시 수치를 표시하�
   location.hash = '#books'
   listeners.hashchange()
   assert.match(root.innerHTML, /등록된 도서가 없습니다/)
+})
+
+test('도서 목록의 작업 메뉴는 테이블 영역 밖에서도 표시된다', async () => {
+  const source = await readFile(new URL('../client/app.ts', import.meta.url), 'utf8')
+  const styles = await readFile(new URL('../client/styles.css', import.meta.url), 'utf8')
+
+  assert.match(source, /actionMenuPosition/)
+  assert.match(source, /getBoundingClientRect/)
+  assert.match(styles, /\.action-menu\s*\{\s*position:fixed;/)
 })
