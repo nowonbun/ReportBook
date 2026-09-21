@@ -56,3 +56,13 @@ test('도서 목록의 작업 메뉴는 테이블 영역 밖에서도 표시된�
   assert.match(source, /getBoundingClientRect/)
   assert.match(styles, /\.action-menu\s*\{\s*position:fixed;/)
 })
+
+test('일일 독서 세부 기록 메뉴와 읽는 중 도서 검색 폼을 제공한다', async () => {
+  const source = await readFile(new URL('../client/app.ts', import.meta.url), 'utf8')
+  const data = await readFile(new URL('../client/data.ts', import.meta.url), 'utf8')
+  assert.match(data, /daily/)
+  assert.match(source, /일일 독서 세부 기록/)
+  assert.match(source, /book\.status === '읽는 중'/)
+  assert.match(source, /id="daily-log-form"/)
+  assert.match(source, /\/api\/reading-logs/)
+})

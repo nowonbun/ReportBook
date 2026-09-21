@@ -1,5 +1,5 @@
 export type BookStatus = '완독' | '읽는 중' | '읽고 싶음' | '중단'
-export type Page = 'dashboard' | 'books' | 'write' | 'categories' | 'search' | 'stats' | 'notes' | 'settings'
+export type Page = 'dashboard' | 'books' | 'write' | 'daily' | 'categories' | 'search' | 'stats' | 'notes' | 'settings'
 
 export interface Book {
   id: number
@@ -25,6 +25,21 @@ export interface Book {
   links: string[]
   favoriteQuote: boolean
   cover: string
+}
+
+export interface ReadingLog {
+  id: number
+  bookId: number
+  bookTitle: string
+  bookAuthor: string
+  readDate: string
+  pagesRead: number
+  minutesRead: number
+  summary: string
+  thoughts: string
+  tags: string[]
+  memo: string
+  createdAt: string
 }
 
 export const categories = ['소설', '에세이', '자기계발', '역사', '인문', '과학', 'IT', '기타']

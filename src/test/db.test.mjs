@@ -55,3 +55,37 @@ test('새 빈 DB에서 사용자가 처음 추가한 도서는 ID 1로 저장된
   assert.equal(store.list()[0].title, '첫 기록')
   store.close()
 })
+
+test('읽는 중인 도서에만 일일 독서 세부 기록을 저장·수정·삭제한다', () => {
+  const reading = { ...sample, status:'읽는 중', title:'읽는 책' }
+  const done = { ...sample, status:'완독', title:'완독한 책' }
+  const store = createBookStore(':memory:', [reading, done])
+  const [doneBook, readingBook] = store.list()
+  const readingId = readingBook.title === reading.title ? readingBook.id : doneBook.id
+  const doneId = readingBook.title === done.title ? readingBook.id : doneBook.id
+
+  const created = store.createReadingLog({
+    bookId:readingId, readDate:'2026-09-21', pagesRead:34, minutesRead:75,
+    summary:'3장을 읽음', thoughts:'인물의 선택이 인상적', tags:['성장'], memo:'다음에 4장부터',
+  })
+  assert.ok(created.id > 0)
+  assert.equal(created.bookTitle, '읽는 책')
+  assert.equal(store.listReadingLogs()[0].minutesRead, 75)
+
+  const changed = store.updateReadingLog(created.id, { ...created, pagesRead:40 })
+  assert.equal(changed?.pagesRead, 40)
+  assert.throws(() => store.createReadingLog({ ...created, id:undefined, bookId:doneId }), /읽는 중/)
+  assert.equal(store.removeReadingLog(created.id), true)
+  assert.equal(store.listReadingLogs().length, 0)
+  store.close()
+})
+
+test('일일 독서 세부 기록은 날짜와 읽은 분량을 검증한다', () => {
+  const store = createBookStore(':memory:', [{ ...sample, status:'읽는 중' }])
+  const bookId = store.list()[0].id
+  const valid = { bookId, readDate:'2026-09-21', pagesRead:1, minutesRead:1, summary:'', thoughts:'', tags:[], memo:'' }
+  assert.throws(() => store.createReadingLog({ ...valid, readDate:'' }), /날짜/)
+  assert.throws(() => store.createReadingLog({ ...valid, pagesRead:0 }), /페이지/)
+  assert.throws(() => store.createReadingLog({ ...valid, minutesRead:-1 }), /시간/)
+  store.close()
+})

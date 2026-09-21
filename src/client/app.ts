@@ -1,10 +1,11 @@
-import { categories, type Book, type BookStatus, type Page } from './data.js'
+import { categories, type Book, type BookStatus, type Page, type ReadingLog } from './data.js'
 
 const root = document.getElementById('root')!
 const pageNames: Record<Page, string> = {
   dashboard: '대시보드',
   books: '도서 목록',
   write: '독서 기록 작성',
+  daily: '일일 독서 세부 기록',
   categories: '카테고리',
   search: '검색',
   stats: '통계',
@@ -16,6 +17,7 @@ const nav: [Page, string][] = [
   ['dashboard', 'home'],
   ['books', 'book'],
   ['write', 'pencil'],
+  ['daily', 'clock'],
   ['categories', 'folder'],
   ['search', 'search'],
   ['stats', 'stats'],
@@ -169,8 +171,13 @@ const blank = (): Book => ({
   favoriteQuote: false,
   cover: '',
 })
+const blankReadingLog = (): ReadingLog => ({
+  id:0, bookId:0, bookTitle:'', bookAuthor:'', readDate:today(), pagesRead:0,
+  minutesRead:0, summary:'', thoughts:'', tags:[], memo:'', createdAt:'',
+})
 
 let books: Book[] = []
+let readingLogs: ReadingLog[] = []
 let page: Page = location.hash.slice(1) in pageNames
   ? location.hash.slice(1) as Page
   : 'dashboard'
@@ -190,6 +197,9 @@ let dark = false
 let toast = ''
 let tagInput = ''
 let linkInput = ''
+let editingLog = blankReadingLog()
+let dailyBookQuery = ''
+let dailyTagInput = ''
 
 const api = async (path: string, method = 'GET', data?: unknown) => {
   const response = await fetch(path, {
@@ -209,6 +219,7 @@ const api = async (path: string, method = 'GET', data?: unknown) => {
 const loadBooks = async () => {
   try {
     books = await api('/api/books')
+    readingLogs = await api('/api/reading-logs')
     render()
   } catch {
     notice('서버에서 도서 목록을 불러오지 못했습니다.')
@@ -293,6 +304,14 @@ const openEdit = (id: number) => {
     links: [...book.links],
   }
   navigate('write')
+}
+
+const openDailyLog = (id = 0) => {
+  const existing = readingLogs.find(log => log.id === id)
+  editingLog = existing ? { ...existing, tags:[...existing.tags] } : blankReadingLog()
+  dailyBookQuery = existing?.bookTitle || ''
+  dailyTagInput = ''
+  navigate('daily')
 }
 
 function dashboard() {
@@ -680,6 +699,54 @@ function formPage() {
 </form>`
 }
 
+const dailyTextarea = (name: 'summary' | 'thoughts' | 'memo', placeholder: string, max: number) => `<textarea data-log-field="${name}" maxlength="${max}" placeholder="${placeholder}">${escapeHtml(editingLog[name])}</textarea>`
+const duration = (minutes: number) => {
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return [hours ? `${hours}시간` : '', rest ? `${rest}분` : ''].filter(Boolean).join(' ') || '0분'
+}
+
+function dailyPage() {
+  const readingBooks = books.filter(book => book.status === '읽는 중')
+  const searchTerm = dailyBookQuery.trim().toLowerCase()
+  const candidates = readingBooks.filter(book => !searchTerm || [book.title, book.author].some(value => value.toLowerCase().includes(searchTerm)))
+  const selectedBook = books.find(book => book.id === editingLog.bookId)
+  return `${titleBlock(
+    editingLog.id ? '일일 독서 세부 기록 수정' : '일일 독서 세부 기록',
+    '오늘 읽은 분량과 생각을 차곡차곡 남겨보세요.',
+    'clock',
+    editingLog.id ? `<button class="secondary-button" data-action="new-daily">${icon('plus', 18)} 새 기록</button>` : '',
+  )}
+  <div class="daily-layout">
+    <form id="daily-log-form" class="book-form daily-form">
+      <section class="panel daily-book-section">
+        <h2>1. 읽는 중인 도서</h2>
+        <p class="section-help">독서 상태가 ‘읽는 중’인 도서만 검색됩니다.</p>
+        ${selectedBook ? `<div class="selected-daily-book">${cover(selectedBook, 'table-cover')}<div><strong>${escapeHtml(selectedBook.title)}</strong><span>${escapeHtml(selectedBook.author)}</span></div><button type="button" data-action="clear-daily-book">변경</button></div>` : `<div class="daily-book-picker">
+          <div class="daily-book-search">${icon('search', 18)}<input id="daily-book-search" value="${escapeHtml(dailyBookQuery)}" placeholder="책 제목 또는 저자로 검색" autocomplete="off"></div>
+          <div class="daily-book-results">${candidates.length ? candidates.slice(0, 8).map(book => `<button type="button" data-action="select-daily-book" data-id="${book.id}">${cover(book, 'table-cover')}<span><strong>${escapeHtml(book.title)}</strong><small>${escapeHtml(book.author)}</small></span>${icon('right', 17)}</button>`).join('') : `<div class="empty-state compact"><strong>${readingBooks.length ? '검색 결과가 없습니다.' : '읽는 중인 도서가 없습니다.'}</strong><span>먼저 도서 기록에서 상태를 ‘읽는 중’으로 설정해주세요.</span></div>`}</div>
+        </div>`}
+      </section>
+      <section class="panel daily-progress-section">
+        <h2>2. 읽은 날짜·분량·시간</h2>
+        <div class="daily-progress-fields">
+          <label><span class="field-label">읽은 날짜 <b aria-hidden="true">*</b></span><input data-log-field="readDate" type="date" required value="${escapeHtml(editingLog.readDate)}"></label>
+          <label><span class="field-label">읽은 페이지 수 <b aria-hidden="true">*</b></span><div class="suffix-input"><input data-log-field="pagesRead" type="number" min="1" step="1" required value="${editingLog.pagesRead || ''}" placeholder="0"><span>쪽</span></div></label>
+          <label><span class="field-label">읽은 시간 <b aria-hidden="true">*</b></span><div class="time-inputs"><div class="suffix-input"><input id="daily-hours" type="number" min="0" step="1" value="${Math.floor(editingLog.minutesRead / 60)}"><span>시간</span></div><div class="suffix-input"><input id="daily-minutes" type="number" min="0" max="59" step="1" value="${editingLog.minutesRead % 60}"><span>분</span></div></div></label>
+        </div>
+      </section>
+      <section class="panel writing-panel"><h2>3. 내용 요약</h2>${dailyTextarea('summary', '오늘 읽은 내용을 간단히 정리해보세요.', 2000)}<small>${editingLog.summary.length} / 2000</small></section>
+      <section class="panel writing-panel"><h2>4. 감상평</h2>${dailyTextarea('thoughts', '읽으며 느낀 점과 떠오른 생각을 남겨보세요.', 2000)}<small>${editingLog.thoughts.length} / 2000</small></section>
+      <section class="panel daily-extra-section">
+        <div class="tags-panel"><h2>5. 태그</h2><div class="tag-box"><div class="tag-list">${editingLog.tags.map(value => `<button type="button" data-action="remove-daily-tag" data-tag="${escapeHtml(value)}">#${escapeHtml(value)} ×</button>`).join('')}</div><div class="inline-entry"><input id="daily-tag-input" value="${escapeHtml(dailyTagInput)}" placeholder="태그 추가"><button type="button" data-action="add-daily-tag">${icon('plus', 16)}</button></div></div></div>
+        <div class="memo-panel"><h2>${icon('file', 17)} 메모</h2>${dailyTextarea('memo', '다음 독서를 위한 메모를 남겨보세요.', 500)}<small>${editingLog.memo.length} / 500</small></div>
+      </section>
+      <div class="daily-submit"><button class="primary-button" type="submit">${icon('check', 20)} ${editingLog.id ? '수정 저장' : '일일 기록 저장'}</button></div>
+    </form>
+    <aside class="daily-history panel"><div class="panel-heading"><div><h2>최근 일일 기록</h2><p>${readingLogs.length}개의 기록</p></div></div>${readingLogs.length ? `<div class="daily-history-list">${readingLogs.map(log => `<article><div class="daily-history-heading"><time>${formatDate(log.readDate)}</time><span>${log.pagesRead}쪽 · ${duration(log.minutesRead)}</span></div><strong>${escapeHtml(log.bookTitle)}</strong>${log.summary ? `<p>${escapeHtml(log.summary)}</p>` : ''}<div class="daily-history-tags">${log.tags.map(tag => `<span>#${escapeHtml(tag)}</span>`).join('')}</div><div class="daily-history-actions"><button data-action="edit-daily" data-id="${log.id}">수정</button><button data-action="delete-daily" data-id="${log.id}">삭제</button></div></article>`).join('')}</div>` : '<div class="empty-state compact">아직 일일 독서 기록이 없습니다.</div>'}</aside>
+  </div>`
+}
+
 function categoriesPage() { return `${titleBlock('카테고리', '분야별로 나의 책장을 살펴보세요.', 'folder')}<div class="category-card-grid">${categoryCounts().map(item => `<button class="panel category-card" data-action="category" data-category="${escapeHtml(item.name)}">
 <span class="category-card-icon ${categoryClass(item.name)}">${icon('book', 28)}</span>
 <strong>${escapeHtml(item.name)}</strong>
@@ -757,7 +824,7 @@ function settingsPage() { return `${titleBlock('설정', '나에게 맞는 독�
 </section>` }
 
 function render() {
-  const content: Record<Page, () => string> = { dashboard, books: catalog, write: formPage, categories: categoriesPage, search: catalog, stats: statsPage, notes: notesPage, settings: settingsPage }
+  const content: Record<Page, () => string> = { dashboard, books: catalog, write: formPage, daily: dailyPage, categories: categoriesPage, search: catalog, stats: statsPage, notes: notesPage, settings: settingsPage }
   const date = new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }).format(new Date())
   root.innerHTML = `<div class="app-shell ${dark ? 'dark' : ''}">
 <aside class="sidebar ${menuOpen ? 'open' : ''}">
@@ -795,9 +862,16 @@ root.addEventListener('click', async event => {
   const target = (event.target as Element).closest<HTMLElement>('[data-action]')
   if (!target) return
   const action = target.dataset.action, id = Number(target.dataset.id)
-  if (action === 'nav') { const next = target.dataset.page as Page; next === 'write' ? openNew() : navigate(next) }
+  if (action === 'nav') { const next = target.dataset.page as Page; next === 'write' ? openNew() : next === 'daily' ? openDailyLog() : navigate(next) }
   if (action === 'new') openNew()
   if (action === 'edit') openEdit(id)
+  if (action === 'new-daily') openDailyLog()
+  if (action === 'edit-daily') openDailyLog(id)
+  if (action === 'select-daily-book') { const book = books.find(item => item.id === id && item.status === '읽는 중'); if (book) { editingLog.bookId = book.id; editingLog.bookTitle = book.title; editingLog.bookAuthor = book.author; dailyBookQuery = book.title; render() } }
+  if (action === 'clear-daily-book') { editingLog.bookId = 0; editingLog.bookTitle = ''; editingLog.bookAuthor = ''; dailyBookQuery = ''; render() }
+  if (action === 'add-daily-tag') { const value = dailyTagInput.trim().replace(/^#/, ''); if (value && !editingLog.tags.includes(value)) editingLog.tags.push(value); dailyTagInput = ''; render() }
+  if (action === 'remove-daily-tag') { editingLog.tags = editingLog.tags.filter(value => value !== target.dataset.tag); render() }
+  if (action === 'delete-daily' && confirm('이 일일 독서 기록을 삭제하시겠습니까?')) { try { await api(`/api/reading-logs/${id}`, 'DELETE'); readingLogs = readingLogs.filter(log => log.id !== id); if (editingLog.id === id) editingLog = blankReadingLog(); notice('일일 독서 기록을 삭제했습니다.') } catch (error) { notice(`삭제 실패: ${(error as Error).message}`) } }
   if (action === 'actions') {
     if (actionId === id) {
       actionId = null
@@ -846,6 +920,11 @@ root.addEventListener('input', event => {
   if (element.id === 'global-search') { const position = element.selectionStart; query = element.value; page = 'search'; location.hash = 'search'; pageNumber = 1; render(); const next = document.getElementById('global-search') as HTMLInputElement; next.focus(); next.setSelectionRange(position, position); return }
   if (element.id === 'tag-input') { tagInput = element.value; return }
   if (element.id === 'link-input') { linkInput = element.value; return }
+  if (element.id === 'daily-tag-input') { dailyTagInput = element.value; return }
+  if (element.id === 'daily-book-search') { const position = element.selectionStart; dailyBookQuery = element.value; render(); const next = document.getElementById('daily-book-search') as HTMLInputElement | null; next?.focus(); next?.setSelectionRange(position, position); return }
+  if (element.id === 'daily-hours' || element.id === 'daily-minutes') { const hours = Number((document.getElementById('daily-hours') as HTMLInputElement | null)?.value || 0); const minutes = Number((document.getElementById('daily-minutes') as HTMLInputElement | null)?.value || 0); editingLog.minutesRead = Math.max(0, Math.trunc(hours)) * 60 + Math.max(0, Math.min(59, Math.trunc(minutes))); return }
+  const logField = element.dataset.logField as 'readDate' | 'pagesRead' | 'summary' | 'thoughts' | 'memo' | undefined
+  if (logField) { (editingLog as unknown as Record<string, unknown>)[logField] = logField === 'pagesRead' ? Number(element.value) : element.value; return }
   const field = element.dataset.field as keyof Book | undefined
   if (field) { (editing as unknown as Record<string, unknown>)[field] = field === 'pages' || field === 'hours' ? Number(element.value) : element.value }
 })
@@ -860,8 +939,24 @@ root.addEventListener('change', event => {
   if (element.dataset.field && element.tagName === 'SELECT') (editing as unknown as Record<string, unknown>)[element.dataset.field] = element.value
   if (element.id === 'cover-file') { const file = (element as HTMLInputElement).files?.[0]; if (!file) return; if (file.size > 2_000_000) { notice('2MB 이하의 이미지를 선택해주세요.'); return } const reader = new FileReader(); reader.onload = () => { editing.cover = String(reader.result); render() }; reader.readAsDataURL(file) }
 })
-root.addEventListener('keydown', event => { const element = event.target as HTMLElement; if (event.key === 'Enter' && (element.id === 'tag-input' || element.id === 'link-input')) { event.preventDefault(); root.querySelector<HTMLElement>(`[data-action="${element.id === 'tag-input' ? 'add-tag' : 'add-link'}"]`)?.click() } else if (event.key === 'Enter' && element.id === 'global-search') { event.preventDefault(); navigate('search') } })
-root.addEventListener('submit', async event => { if ((event.target as HTMLElement).id !== 'book-form') return; event.preventDefault(); if (!editing.title.trim() || !editing.author.trim()) { notice('책 제목과 저자를 입력해주세요.'); return } try { const wasEditing = Boolean(editing.id); const payload = { ...editing, title: editing.title.trim(), author: editing.author.trim(), registeredDate: editing.registeredDate || today() }; const saved = await api(wasEditing ? `/api/books/${editing.id}` : '/api/books', wasEditing ? 'PUT' : 'POST', payload) as Book; books = wasEditing ? books.map(book => book.id === editing.id ? saved : book) : [saved, ...books]; navigate('books'); notice(wasEditing ? '독서 기록을 수정했습니다.' : '새 독서 기록을 저장했습니다.') } catch (error) { notice(`저장 실패: ${(error as Error).message}`) } })
+root.addEventListener('keydown', event => { const element = event.target as HTMLElement; if (event.key === 'Enter' && (element.id === 'tag-input' || element.id === 'link-input' || element.id === 'daily-tag-input')) { event.preventDefault(); const action = element.id === 'tag-input' ? 'add-tag' : element.id === 'link-input' ? 'add-link' : 'add-daily-tag'; root.querySelector<HTMLElement>(`[data-action="${action}"]`)?.click() } else if (event.key === 'Enter' && element.id === 'global-search') { event.preventDefault(); navigate('search') } })
+root.addEventListener('submit', async event => {
+  const formId = (event.target as HTMLElement).id
+  if (formId === 'daily-log-form') {
+    event.preventDefault()
+    if (!editingLog.bookId) { notice('읽는 중인 도서를 선택해주세요.'); return }
+    if (!editingLog.readDate || editingLog.pagesRead < 1) { notice('읽은 날짜와 페이지 수를 확인해주세요.'); return }
+    try {
+      const wasEditing = Boolean(editingLog.id)
+      const saved = await api(wasEditing ? `/api/reading-logs/${editingLog.id}` : '/api/reading-logs', wasEditing ? 'PUT' : 'POST', editingLog) as ReadingLog
+      readingLogs = wasEditing ? readingLogs.map(log => log.id === editingLog.id ? saved : log) : [saved, ...readingLogs]
+      editingLog = blankReadingLog(); dailyBookQuery = ''; dailyTagInput = ''; render(); notice(wasEditing ? '일일 독서 기록을 수정했습니다.' : '일일 독서 기록을 저장했습니다.')
+    } catch (error) { notice(`저장 실패: ${(error as Error).message}`) }
+    return
+  }
+  if (formId !== 'book-form') return
+  event.preventDefault(); if (!editing.title.trim() || !editing.author.trim()) { notice('책 제목과 저자를 입력해주세요.'); return } try { const wasEditing = Boolean(editing.id); const payload = { ...editing, title: editing.title.trim(), author: editing.author.trim(), registeredDate: editing.registeredDate || today() }; const saved = await api(wasEditing ? `/api/books/${editing.id}` : '/api/books', wasEditing ? 'PUT' : 'POST', payload) as Book; books = wasEditing ? books.map(book => book.id === editing.id ? saved : book) : [saved, ...books]; navigate('books'); notice(wasEditing ? '독서 기록을 수정했습니다.' : '새 독서 기록을 저장했습니다.') } catch (error) { notice(`저장 실패: ${(error as Error).message}`) }
+})
 window.addEventListener('hashchange', () => { const next = location.hash.slice(1) as Page; if (next in pageNames && next !== page) { page = next; render() } })
 render()
 void loadBooks()

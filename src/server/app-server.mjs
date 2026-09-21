@@ -29,6 +29,15 @@ export function createApp(store) {
       if (path === '/api/health' && request.method === 'GET') { json(response, 200, { ok:true, books:store.count() }); return }
       if (path === '/api/books' && request.method === 'GET') { json(response, 200, store.list()); return }
       if (path === '/api/books' && request.method === 'POST') { json(response, 201, store.create(await body(request))); return }
+      if (path === '/api/reading-logs' && request.method === 'GET') { json(response, 200, store.listReadingLogs()); return }
+      if (path === '/api/reading-logs' && request.method === 'POST') { json(response, 201, store.createReadingLog(await body(request))); return }
+      const logMatch = /^\/api\/reading-logs\/([1-9]\d*)$/.exec(path)
+      if (logMatch) {
+        const id = Number(logMatch[1])
+        if (request.method === 'GET') { const log = store.getReadingLog(id); log ? json(response, 200, log) : json(response, 404, { error:'일일 독서 기록을 찾을 수 없습니다.' }); return }
+        if (request.method === 'PUT') { const log = store.updateReadingLog(id, await body(request)); log ? json(response, 200, log) : json(response, 404, { error:'일일 독서 기록을 찾을 수 없습니다.' }); return }
+        if (request.method === 'DELETE') { if (store.removeReadingLog(id)) { response.writeHead(204); response.end() } else json(response, 404, { error:'일일 독서 기록을 찾을 수 없습니다.' }); return }
+      }
       const match = /^\/api\/books\/([1-9]\d*)$/.exec(path)
       if (match) {
         const id = Number(match[1])

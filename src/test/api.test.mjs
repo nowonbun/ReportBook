@@ -46,3 +46,31 @@ test('잘못된 입력은 400, 없는 도서는 404를 반환한다', async () =
     assert.equal(missing.status, 404)
   } finally { server.close(); store.close() }
 })
+
+test('일일 독서 세부 기록 API가 조회·생성·수정·삭제한다', async () => {
+  const store = createBookStore(':memory:', [{ ...sample, title:'읽는 책' }])
+  const bookId = store.list()[0].id
+  const server = createApp(store)
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const base = `http://127.0.0.1:${server.address().port}`
+  const payload = { bookId, readDate:'2026-09-21', pagesRead:25, minutesRead:50, summary:'요약', thoughts:'감상', tags:['일일'], memo:'메모' }
+  try {
+    let response = await fetch(`${base}/api/reading-logs`, { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify(payload) })
+    assert.equal(response.status, 201)
+    const created = await response.json()
+    assert.equal(created.bookTitle, '읽는 책')
+
+    response = await fetch(`${base}/api/reading-logs`)
+    assert.equal((await response.json()).length, 1)
+
+    response = await fetch(`${base}/api/reading-logs/${created.id}`, { method:'PUT', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ ...payload, pagesRead:30 }) })
+    assert.equal((await response.json()).pagesRead, 30)
+
+    response = await fetch(`${base}/api/reading-logs`, { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ ...payload, pagesRead:0 }) })
+    assert.equal(response.status, 400)
+
+    response = await fetch(`${base}/api/reading-logs/${created.id}`, { method:'DELETE' })
+    assert.equal(response.status, 204)
+  } finally { server.close(); store.close() }
+})
